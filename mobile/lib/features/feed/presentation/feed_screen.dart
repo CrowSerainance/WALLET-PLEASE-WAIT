@@ -6,7 +6,7 @@ import '../../../core/models/models.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/ad_banner.dart';
 import '../../../core/widgets/money_text.dart';
-import '../../auth/auth_repository.dart';
+import 'request_safety_menu.dart';
 import '../feed_repository.dart';
 import 'vote_sheet.dart';
 
@@ -65,41 +65,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
   }
 
-  Future<void> _report(PurchaseRequest request) async {
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Report request'),
-        children: [
-          for (final r in ['spam', 'harassment', 'scam link', 'NSFW', 'other'])
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, r),
-              child: Text(r),
-            ),
-        ],
-      ),
-    );
-    if (reason == null) return;
-    await ref.read(feedRepositoryProvider).report(
-          targetType: 'request',
-          targetId: request.id,
-          reason: reason,
-        );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Report submitted. Thanks.')),
-    );
-  }
-
-  Future<void> _block(PurchaseRequest request) async {
-    await ref.read(authRepositoryProvider).blockUser(request.ownerId);
-    ref.invalidate(feedProvider);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('User blocked. Their posts are hidden.')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final feed = ref.watch(feedProvider);
@@ -146,8 +111,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         request: item,
                         onApprove: () => _vote(item, VoteDecision.approve),
                         onReject: () => _vote(item, VoteDecision.reject),
-                        onReport: () => _report(item),
-                        onBlock: () => _block(item),
                       );
                     },
                   ),
@@ -166,15 +129,11 @@ class _RequestCard extends StatelessWidget {
     required this.request,
     required this.onApprove,
     required this.onReject,
-    required this.onReport,
-    required this.onBlock,
   });
 
   final PurchaseRequest request;
   final VoidCallback onApprove;
   final VoidCallback onReject;
-  final VoidCallback onReport;
-  final VoidCallback onBlock;
 
   @override
   Widget build(BuildContext context) {
@@ -225,16 +184,7 @@ class _RequestCard extends StatelessWidget {
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                     ),
-                    PopupMenuButton<String>(
-                      onSelected: (v) {
-                        if (v == 'report') onReport();
-                        if (v == 'block') onBlock();
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'report', child: Text('Report')),
-                        PopupMenuItem(value: 'block', child: Text('Block user')),
-                      ],
-                    ),
+                    RequestSafetyMenu(request: request),
                   ],
                 ),
                 const SizedBox(height: 4),

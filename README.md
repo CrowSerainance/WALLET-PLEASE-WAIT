@@ -57,3 +57,24 @@ Edge function smoke tests (localhost only): see [`supabase/functions/_shared/tes
 
 Store-facing name: **HoldMyWallet**  
 Keyword bridge: Wallet, Please Wait (see ASO doc).
+
+## Release checks
+
+Use Flutter 3.50.0 and Supabase CLI 3.2.0 for the checks in
+[`release-checks.yml`](.github/workflows/release-checks.yml). The workflow resets a
+local database, checks circle access and savings, and submits requests and votes
+through the Edge Functions with anonymous user sessions.
+
+Apply migrations and deploy `create-request` and `cast-vote` together in staging
+before distributing the updated client. Both functions use the built-in server
+environment to verify the session and moderate content. Existing clients must
+upgrade to create requests. Circle links grant access when opened. If a previous
+deployment exposed invitation tokens, replace affected invitations before launch.
+The expiry job runs every minute. The Saved tab can be refreshed after a verdict.
+
+For Android signing, put `storeFile` (absolute or relative to `mobile/android`),
+`storePassword`, `keyAlias` and `keyPassword` in the ignored
+`mobile/android/key.properties`. Use the Play upload key. Build with
+`--dart-define=USE_MOCK_DATA=false`, a hosted HTTPS `SUPABASE_URL` and its public
+`SUPABASE_ANON_KEY` supplied through `--dart-define`. Keep ads disabled until
+production ad IDs and consent settings are configured. Keep the demo seed local.

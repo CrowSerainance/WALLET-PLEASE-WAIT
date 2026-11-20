@@ -10,6 +10,15 @@ import '../theme/app_theme.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/feed',
+  redirect: (_, state) {
+    final uri = state.uri;
+    if (uri.scheme == 'walletwait' &&
+        uri.host == 'r' &&
+        uri.pathSegments.length == 1) {
+      return Uri(pathSegments: ['', 'r', uri.pathSegments.single]).toString();
+    }
+    return null;
+  },
   routes: [
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
@@ -52,8 +61,9 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/r/:token',
-      builder: (context, state) =>
-          CircleScreen(shareToken: state.pathParameters['token']!),
+      builder: (context, state) => CircleScreen(
+          key: ValueKey(state.pathParameters['token']),
+          shareToken: state.pathParameters['token']!),
     ),
   ],
 );

@@ -1,0 +1,36 @@
+name: Release checks
+on: [pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.50.0
+          cache: true
+      - name: Analyze and test Flutter app
+        working-directory: mobile
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter analyze --no-pub
+          flutter test --no-pub
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Start local Supabase and apply migrations
+        run: |
+          npx --yes supabase@3.2.0 start -x studio,imgproxy,realtime,logflare,vector,supavisor,postgres-meta,mailpit
+          npx --yes supabase@3.2.0 db reset
+      - name: Check access policies and savings
+        run: psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -f supabase/checks/release_flows.sql
+      - name: Check moderated submissions and voting
+        run: |
+          npx --yes supabase@3.2.0 status -o env > "$RUNNER_TEMP/supabase.env"
+          node --env-file="$RUNNER_TEMP/supabase.env" supabase/checks/moderated-flow.mjs

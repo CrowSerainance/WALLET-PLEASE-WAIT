@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/money_text.dart';
 import '../../feed/feed_repository.dart';
 import '../../feed/presentation/vote_sheet.dart';
+import '../../feed/presentation/request_safety_menu.dart';
 
 class CircleScreen extends ConsumerStatefulWidget {
   const CircleScreen({super.key, required this.shareToken});
@@ -33,11 +34,13 @@ class _CircleScreenState extends ConsumerState<CircleScreen> {
       final r = await ref
           .read(feedRepositoryProvider)
           .fetchByShareToken(widget.shareToken);
+      if (!mounted) return;
       setState(() {
         _request = r;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e;
         _loading = false;
@@ -56,8 +59,8 @@ class _CircleScreenState extends ConsumerState<CircleScreen> {
             decision: decision,
             reason: reason,
           );
-      setState(() => _request = updated);
       if (!mounted) return;
+      setState(() => _request = updated);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Your circle vote counted.')),
       );
@@ -72,7 +75,12 @@ class _CircleScreenState extends ConsumerState<CircleScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Private Circle')),
+      appBar: AppBar(title: const Text('Private Circle'), actions: [
+        if (_request != null)
+          RequestSafetyMenu(
+              request: _request!,
+              onBlocked: () => setState(() => _request = null)),
+      ]),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -115,9 +123,8 @@ class _CircleScreenState extends ConsumerState<CircleScreen> {
           children: [
             Expanded(
               child: ElevatedButton(
-                onPressed: request.isOpen
-                    ? () => _vote(VoteDecision.approve)
-                    : null,
+                onPressed:
+                    request.isOpen ? () => _vote(VoteDecision.approve) : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.approve,
                   foregroundColor: Colors.white,

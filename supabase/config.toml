@@ -18,7 +18,7 @@ major_version = 15
 enabled = true
 port = 54323
 
-[inbucket]
+[local_smtp]
 enabled = true
 port = 54324
 
@@ -34,8 +34,12 @@ enable_signup = true
 enable_anonymous_sign_ins = true
 
 [auth.email]
-enable_signup = true
+enabled = true
 enable_confirmations = false
 
-[functions]
-verify_jwt = true
+# Each write function authenticates the caller with Supabase Auth.
+[functions.cast-vote]
+verify_jwt = false
+
+[functions.create-request]
+verify_jwt = false

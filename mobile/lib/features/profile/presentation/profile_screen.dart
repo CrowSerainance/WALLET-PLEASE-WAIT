@@ -5,6 +5,7 @@ import '../../../core/config/app_config.dart';
 import '../../../core/models/models.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../auth/auth_repository.dart';
+import '../../feed/feed_repository.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -53,9 +54,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e')),
         data: (user) {
-          if (user == null) {
-            return const Center(child: Text('Not signed in'));
-          }
           _hydrate(user);
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -77,7 +75,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               DropdownButtonFormField<CurrencyCode>(
                 key: ValueKey(_currency),
                 initialValue: _currency,
-                decoration: const InputDecoration(labelText: 'Default currency'),
+                decoration:
+                    const InputDecoration(labelText: 'Default currency'),
                 items: CurrencyCode.values
                     .map((c) => DropdownMenuItem(value: c, child: Text(c.name)))
                     .toList(),
@@ -105,24 +104,47 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       : '${user.blockedIds.length} blocked',
                 ),
               ),
-              ListTile(
+              for (final id in user.blockedIds)
+                ListTile(
+                  title: Text(id),
+                  trailing: TextButton(
+                    onPressed: () async {
+                      try {
+                        await ref.read(authRepositoryProvider).unblockUser(id);
+                        if (!mounted) return;
+                        ref.invalidate(currentUserProvider);
+                        ref.invalidate(feedProvider);
+                      } catch (_) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content:
+                                    Text('Could not unblock user. Try again.')),
+                          );
+                        }
+                      }
+                    },
+                    child: const Text('Unblock'),
+                  ),
+                ),
+              const ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Community guidelines'),
-                subtitle: const Text(
+                title: Text('Community guidelines'),
+                subtitle: Text(
                   'No scams, hate, or NSFW. Reasons required on every vote. Report & block available on every card.',
                 ),
               ),
-              ListTile(
+              const ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Deep links'),
+                title: Text('Deep links'),
                 subtitle: Text(
                   '${AppConfig.deepLinkScheme}://r/{share_token}\n'
                   'https://${AppConfig.httpsFallbackHost}/r/{share_token}',
                 ),
               ),
-              ListTile(
+              const ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Mode'),
+                title: Text('Mode'),
                 subtitle: Text(
                   AppConfig.useMockData
                       ? 'Mock data (USE_MOCK_DATA=true)'

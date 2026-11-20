@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// Runtime configuration via `--dart-define`.
 /// Example:
 /// flutter run \
@@ -40,4 +42,34 @@ class AppConfig {
 
   static const deepLinkScheme = 'walletwait';
   static const httpsFallbackHost = 'holdmywallet.app';
+}
+
+// Evaluated by the Dart compiler when constructing the release entry point.
+class ReleaseConfiguration {
+  const ReleaseConfiguration()
+      : assert(!kReleaseMode || !AppConfig.useMockData,
+            'Release builds require USE_MOCK_DATA=false'),
+        assert(
+            !kReleaseMode ||
+                (AppConfig.supabaseAnonKey != '' &&
+                    AppConfig.supabaseAnonKey != 'local-anon-key'),
+            'Set SUPABASE_ANON_KEY for release'),
+        assert(
+            !kReleaseMode ||
+                (AppConfig.supabaseUrl != '' &&
+                    AppConfig.supabaseUrl != 'http://127.0.0.1:54321'),
+            'Set SUPABASE_URL for release');
+
+  void validate() {
+    if (!kReleaseMode) return;
+    final url = Uri.tryParse(AppConfig.supabaseUrl);
+    if (url == null ||
+        url.scheme != 'https' ||
+        url.host.isEmpty ||
+        url.host == 'localhost' ||
+        url.host.startsWith('127.') ||
+        url.host == '::1') {
+      throw StateError('Release builds require an HTTPS Supabase endpoint');
+    }
+  }
 }
