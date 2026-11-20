@@ -18,7 +18,12 @@ class SavingsScreen extends ConsumerWidget {
     final async = ref.watch(savingsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Money saved')),
+      appBar: AppBar(title: const Text('Money saved'), actions: [
+        IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh savings',
+            onPressed: () => ref.invalidate(savingsProvider)),
+      ]),
       body: Column(
         children: [
           const AdBanner(),
@@ -74,15 +79,19 @@ class SavingsScreen extends ConsumerWidget {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          MoneyText(
-                            priceCents: s.estimatedSavedCents,
-                            currency: s.currency,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 36,
-                              fontWeight: FontWeight.w800,
+                          if (s.savedByCurrency.isEmpty)
+                            const Text('No savings recorded yet',
+                                style: TextStyle(color: Colors.white)),
+                          for (final amount in s.savedByCurrency.entries)
+                            MoneyText(
+                              priceCents: amount.value,
+                              currency: amount.key,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 36,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                          ),
                           const SizedBox(height: 8),
                           const Text(
                             'Counted when you mark a rejected item as Skipped.',
@@ -91,6 +100,34 @@ class SavingsScreen extends ConsumerWidget {
                         ],
                       ),
                     ),
+                    for (final request in s.eligible)
+                      ListTile(
+                        title: Text(request.title),
+                        subtitle: MoneyText(
+                            priceCents: request.priceCents,
+                            currency: request.currency),
+                        trailing: TextButton(
+                          child: const Text('Mark skipped'),
+                          onPressed: () async {
+                            try {
+                              await ref
+                                  .read(feedRepositoryProvider)
+                                  .markSkipped(request.id);
+                              if (context.mounted) {
+                                ref.invalidate(savingsProvider);
+                              }
+                            } catch (_) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text(
+                                          'Could not record savings. Try again.')),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      ),
                   ],
                 );
               },

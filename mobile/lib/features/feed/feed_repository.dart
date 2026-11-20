@@ -50,12 +50,30 @@ class MockFeedRepository implements FeedRepository {
 
   final AuthRepository _auth;
   final _uuid = const Uuid();
+  final _skipped = <String>{};
 
   late final List<PurchaseRequest> _items = _seed();
 
   List<PurchaseRequest> _seed() {
     final now = DateTime.now();
     return [
+      PurchaseRequest(
+        id: '22222222-2222-2222-2222-222222222231',
+        ownerId: '00000000-0000-0000-0000-000000000001',
+        title: 'Desk headphones',
+        priceCents: 89900,
+        currency: CurrencyCode.PHP,
+        whyWant: 'For work',
+        visibility: RequestVisibility.public,
+        shareToken: 'seedtoken31',
+        durationHours: 1,
+        endsAt: now.subtract(const Duration(hours: 1)),
+        status: RequestStatus.locked,
+        approveCount: 1,
+        rejectCount: 3,
+        finalVerdict: FinalVerdict.reject,
+        moderationStatus: ModerationStatus.approved,
+      ),
       PurchaseRequest(
         id: '22222222-2222-2222-2222-222222222201',
         ownerId: '11111111-1111-1111-1111-111111111101',
@@ -156,6 +174,7 @@ class MockFeedRepository implements FeedRepository {
     final blocked = user?.blockedIds ?? const [];
     return _items
         .where((r) =>
+            r.isOpen &&
             r.visibility == RequestVisibility.public &&
             r.moderationStatus == ModerationStatus.approved &&
             !blocked.contains(r.ownerId))
@@ -165,7 +184,12 @@ class MockFeedRepository implements FeedRepository {
   @override
   Future<PurchaseRequest?> fetchByShareToken(String token) async {
     try {
-      return _items.firstWhere((r) => r.shareToken == token);
+      final viewer = await _auth.currentUser();
+      return _items.firstWhere((r) =>
+          r.shareToken == token &&
+          r.visibility == RequestVisibility.circle &&
+          r.moderationStatus == ModerationStatus.approved &&
+          !(viewer?.blockedIds.contains(r.ownerId) ?? false));
     } catch (_) {
       return null;
     }
@@ -250,15 +274,35 @@ class MockFeedRepository implements FeedRepository {
     final mine = _items.where((r) => r.ownerId == user.id).toList();
     return SavingsSummary(
       requestsSubmitted: mine.length,
-      approvedCount: mine.where((r) => r.finalVerdict == FinalVerdict.approve).length,
-      rejectedCount: mine.where((r) => r.finalVerdict == FinalVerdict.reject).length,
-      estimatedSavedCents: 89900,
-      currency: user.currency,
+      approvedCount:
+          mine.where((r) => r.finalVerdict == FinalVerdict.approve).length,
+      rejectedCount:
+          mine.where((r) => r.finalVerdict == FinalVerdict.reject).length,
+      savedByCurrency: {
+        for (final currency in CurrencyCode.values)
+          if (mine
+              .any((r) => r.currency == currency && _skipped.contains(r.id)))
+            currency: mine
+                .where((r) => r.currency == currency && _skipped.contains(r.id))
+                .fold<int>(0, (sum, r) => sum + r.priceCents),
+      },
+      eligible: mine
+          .where((r) =>
+              r.finalVerdict == FinalVerdict.reject && !_skipped.contains(r.id))
+          .toList(),
     );
   }
 
   @override
-  Future<void> markSkipped(String requestId) async {}
+  Future<void> markSkipped(String requestId) async {
+    final user = await _auth.ensureSession();
+    if (_items.any((r) =>
+        r.id == requestId &&
+        r.ownerId == user.id &&
+        r.finalVerdict == FinalVerdict.reject)) {
+      _skipped.add(requestId);
+    }
+  }
 
   @override
   Future<void> report({
@@ -280,6 +324,8 @@ class SupabaseFeedRepository implements FeedRepository {
         .select()
         .eq('visibility', 'public')
         .eq('moderation_status', 'approved')
+        .eq('status', 'open')
+        .gt('ends_at', DateTime.now().toUtc().toIso8601String())
         .order('created_at', ascending: false)
         .limit(50);
     return (rows as List)
@@ -290,10 +336,7 @@ class SupabaseFeedRepository implements FeedRepository {
   @override
   Future<PurchaseRequest?> fetchByShareToken(String token) async {
     final row = await _client
-        .from('purchase_requests')
-        .select()
-        .eq('share_token', token)
-        .maybeSingle();
+        .rpc('open_circle', params: {'p_token': token}).maybeSingle();
     if (row == null) return null;
     return PurchaseRequest.fromJson(Map<String, dynamic>.from(row));
   }
@@ -304,32 +347,13 @@ class SupabaseFeedRepository implements FeedRepository {
     required VoteDecision decision,
     required String reason,
   }) async {
-    // Prefer edge function; fall back to RPC for local simplicity.
-    try {
-      final res = await _client.functions.invoke(
-        'cast-vote',
-        body: {
-          'request_id': requestId,
-          'decision': decision.name,
-          'reason': reason,
-        },
-      );
-      final data = res.data as Map<String, dynamic>;
-      if (data['request'] != null) {
-        return PurchaseRequest.fromJson(
-          Map<String, dynamic>.from(data['request'] as Map),
-        );
-      }
-    } catch (_) {
-      // fall through to RPC
-    }
-
-    final row = await _client.rpc('cast_vote', params: {
-      'p_request_id': requestId,
-      'p_decision': decision.name,
-      'p_reason': reason,
+    final res = await _client.functions.invoke('cast-vote', body: {
+      'request_id': requestId,
+      'decision': decision.name,
+      'reason': reason,
     });
-    return PurchaseRequest.fromJson(Map<String, dynamic>.from(row as Map));
+    return PurchaseRequest.fromJson(
+        Map<String, dynamic>.from(res.data['request'] as Map));
   }
 
   @override
@@ -344,60 +368,36 @@ class SupabaseFeedRepository implements FeedRepository {
     required int durationHours,
     required RequestVisibility visibility,
   }) async {
-    final uid = _client.auth.currentUser!.id;
-    final endsAt = DateTime.now().toUtc().add(Duration(hours: durationHours));
-    final row = await _client
-        .from('purchase_requests')
-        .insert({
-          'owner_id': uid,
-          'title': title,
-          'price_cents': priceCents,
-          'currency': currency.name,
-          'image_url': imageUrl,
-          'product_url': productUrl,
-          'why_want': whyWant,
-          'cheaper_alt': cheaperAlt,
-          'visibility': visibility.name,
-          'duration_hours': durationHours,
-          'ends_at': endsAt.toIso8601String(),
-          'moderation_status': 'approved',
-        })
-        .select()
-        .single();
-    return PurchaseRequest.fromJson(Map<String, dynamic>.from(row));
+    final res = await _client.functions.invoke('create-request', body: {
+      'title': title,
+      'price_cents': priceCents,
+      'currency': currency.name,
+      'image_url': imageUrl,
+      'product_url': productUrl,
+      'why_want': whyWant,
+      'cheaper_alt': cheaperAlt,
+      'visibility': visibility.name,
+      'duration_hours': durationHours,
+    });
+    return PurchaseRequest.fromJson(
+        Map<String, dynamic>.from(res.data['request'] as Map));
   }
 
   @override
   Future<SavingsSummary> fetchSavings() async {
-    final uid = _client.auth.currentUser!.id;
-    final mine = await _client
-        .from('purchase_requests')
-        .select()
-        .eq('owner_id', uid);
-    final savings = await _client
-        .from('savings_events')
-        .select()
-        .eq('user_id', uid);
-
-    final list = (mine as List)
-        .map((e) => PurchaseRequest.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
-    final savedCents = (savings as List).fold<int>(
-      0,
-      (sum, e) => sum + (e['amount_cents'] as int? ?? 0),
-    );
-    final currency = list.isNotEmpty
-        ? list.first.currency
-        : CurrencyCode.USD;
-
+    final summary =
+        await _client.rpc('savings_summary') as Map<String, dynamic>;
+    final totals = Map<String, int>.from(summary['saved_by_currency'] as Map);
     return SavingsSummary(
-      requestsSubmitted: list.length,
-      approvedCount:
-          list.where((r) => r.finalVerdict == FinalVerdict.approve).length,
-      rejectedCount:
-          list.where((r) => r.finalVerdict == FinalVerdict.reject).length,
-      estimatedSavedCents: savedCents,
-      currency: currency,
+      requestsSubmitted: summary['submitted'] as int,
+      approvedCount: summary['approved'] as int,
+      rejectedCount: summary['rejected'] as int,
+      savedByCurrency: totals.map(
+          (code, cents) => MapEntry(CurrencyCode.values.byName(code), cents)),
+      eligible: (summary['eligible'] as List)
+          .map(
+              (row) => PurchaseRequest.fromJson(Map<String, dynamic>.from(row)))
+          .toList(),
     );
   }
 

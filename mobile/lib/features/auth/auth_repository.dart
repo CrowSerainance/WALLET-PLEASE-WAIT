@@ -9,7 +9,7 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return SupabaseAuthRepository(Supabase.instance.client);
 });
 
-final currentUserProvider = FutureProvider<AppUser?>((ref) async {
+final currentUserProvider = FutureProvider<AppUser>((ref) async {
   return ref.watch(authRepositoryProvider).ensureSession();
 });
 
@@ -22,6 +22,8 @@ abstract class AuthRepository {
     CurrencyCode? currency,
   });
   Future<void> blockUser(String userId);
+  Future<void> unblockUser(String userId);
+  Future<void> acceptGuidelines();
 }
 
 class MockAuthRepository implements AuthRepository {
@@ -50,20 +52,36 @@ class MockAuthRepository implements AuthRepository {
       region: region ?? _user.region,
       currency: currency ?? _user.currency,
       blockedIds: _user.blockedIds,
+      acceptedGuidelines: _user.acceptedGuidelines,
       voiceOfReason: _user.voiceOfReason,
     );
   }
 
   @override
   Future<void> blockUser(String userId) async {
-    final ids = {..._user.blockedIds, userId}.toList();
+    _updatePreferences(
+        {..._user.blockedIds, userId}.toList(), _user.acceptedGuidelines);
+  }
+
+  @override
+  Future<void> unblockUser(String userId) async {
+    _updatePreferences(_user.blockedIds.where((id) => id != userId).toList(),
+        _user.acceptedGuidelines);
+  }
+
+  @override
+  Future<void> acceptGuidelines() async =>
+      _updatePreferences(_user.blockedIds, true);
+
+  void _updatePreferences(List<String> blockedIds, bool acceptedGuidelines) {
     _user = AppUser(
       id: _user.id,
       displayName: _user.displayName,
       region: _user.region,
       currency: _user.currency,
-      blockedIds: ids,
       voiceOfReason: _user.voiceOfReason,
+      blockedIds: blockedIds,
+      acceptedGuidelines: acceptedGuidelines,
     );
   }
 }
@@ -81,19 +99,7 @@ class SupabaseAuthRepository implements AuthRepository {
       session = res.session;
     }
     final uid = session!.user.id;
-    final row = await _client.from('users').select().eq('id', uid).maybeSingle();
-    if (row == null) {
-      await _client.from('users').upsert({
-        'id': uid,
-        'display_name': 'Anonymous',
-      });
-      return AppUser(
-        id: uid,
-        displayName: 'Anonymous',
-        region: 'US',
-        currency: CurrencyCode.USD,
-      );
-    }
+    final row = await _client.from('users').select().eq('id', uid).single();
     return AppUser.fromJson(row);
   }
 
@@ -101,7 +107,8 @@ class SupabaseAuthRepository implements AuthRepository {
   Future<AppUser?> currentUser() async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) return null;
-    final row = await _client.from('users').select().eq('id', uid).maybeSingle();
+    final row =
+        await _client.from('users').select().eq('id', uid).maybeSingle();
     return row == null ? null : AppUser.fromJson(row);
   }
 
@@ -123,5 +130,15 @@ class SupabaseAuthRepository implements AuthRepository {
   @override
   Future<void> blockUser(String userId) async {
     await _client.rpc('block_user', params: {'p_blocked': userId});
+  }
+
+  @override
+  Future<void> unblockUser(String userId) async {
+    await _client.rpc('unblock_user', params: {'p_blocked': userId});
+  }
+
+  @override
+  Future<void> acceptGuidelines() async {
+    await _client.rpc('accept_guidelines');
   }
 }

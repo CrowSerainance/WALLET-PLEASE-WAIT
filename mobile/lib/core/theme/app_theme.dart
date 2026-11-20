@@ -21,7 +21,7 @@ class AppTheme {
     );
     return base.copyWith(
       scaffoldBackgroundColor: AppColors.background,
-      colorScheme: ColorScheme.light(
+      colorScheme: const ColorScheme.light(
         primary: AppColors.approve,
         secondary: AppColors.reject,
         surface: AppColors.surface,

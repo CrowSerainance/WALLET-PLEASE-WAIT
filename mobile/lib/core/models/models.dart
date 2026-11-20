@@ -19,6 +19,7 @@ class AppUser {
     required this.currency,
     this.blockedIds = const [],
     this.voiceOfReason = false,
+    this.acceptedGuidelines = false,
   });
 
   final String id;
@@ -27,17 +28,20 @@ class AppUser {
   final CurrencyCode currency;
   final List<String> blockedIds;
   final bool voiceOfReason;
+  final bool acceptedGuidelines;
 
   factory AppUser.fromJson(Map<String, dynamic> json) {
     return AppUser(
       id: json['id'] as String,
       displayName: json['display_name'] as String? ?? 'Anonymous',
       region: json['region'] as String? ?? 'US',
-      currency: CurrencyCode.values.byName(json['currency'] as String? ?? 'USD'),
+      currency:
+          CurrencyCode.values.byName(json['currency'] as String? ?? 'USD'),
       blockedIds: (json['blocked_ids'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
           const [],
+      acceptedGuidelines: json['guidelines_accepted_at'] != null,
       voiceOfReason: json['voice_of_reason'] as bool? ?? false,
     );
   }
@@ -86,8 +90,7 @@ class PurchaseRequest {
 
   int get totalVotes => approveCount + rejectCount;
 
-  double get approveRatio =>
-      totalVotes == 0 ? 0.5 : approveCount / totalVotes;
+  double get approveRatio => totalVotes == 0 ? 0.5 : approveCount / totalVotes;
 
   bool get isOpen =>
       status == RequestStatus.open && endsAt.isAfter(DateTime.now());
@@ -139,15 +142,15 @@ class SavingsSummary {
     required this.requestsSubmitted,
     required this.approvedCount,
     required this.rejectedCount,
-    required this.estimatedSavedCents,
-    required this.currency,
+    required this.savedByCurrency,
+    required this.eligible,
   });
 
   final int requestsSubmitted;
   final int approvedCount;
   final int rejectedCount;
-  final int estimatedSavedCents;
-  final CurrencyCode currency;
+  final Map<CurrencyCode, int> savedByCurrency;
+  final List<PurchaseRequest> eligible;
 
   double get rejectRatio {
     final locked = approvedCount + rejectedCount;

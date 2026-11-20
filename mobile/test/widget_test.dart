@@ -6,6 +6,8 @@ void main() {
   testWidgets('HoldMyWallet boots to Public Square', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: HoldMyWalletApp()));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Accept and continue'));
+    await tester.pumpAndSettle();
 
     expect(find.text('HoldMyWallet'), findsWidgets);
     expect(find.text('Square'), findsOneWidget);
